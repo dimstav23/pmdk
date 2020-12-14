@@ -83,7 +83,6 @@ SRC=pmembench.cpp\
 
 # Configuration file without the .cfg extension
 CONFIGS=pmembench_log\
-	pmembench_blk\
 	pmembench_memset\
 	pmembench_memcpy\
 	pmembench_flush\
@@ -95,6 +94,7 @@ CONFIGS=pmembench_log\
 	pmembench_map\
 	pmembench_tx\
 	pmembench_atomic_lists
+#pmembench_blk\
 
 OBJS=$(SRC:.cpp=.o)
 ifneq ($(filter 1 2, $(CSTYLEON)),)
@@ -130,6 +130,10 @@ CXXFLAGS += -I../rpmem_common
 CXXFLAGS += -I../librpmem
 CXXFLAGS += $(OS_INCS)
 CXXFLAGS += -DSRCVERSION='"$(SRCVERSION)"'
+
+LIBS+= -lprofiler
+LDFLAGS += -L/home/dimstav23/Tools/gperftools/build/lib
+CXXFLAGS += -I/home/dimstav23/Tools/gperftools/build/include/gperftools
 
 ifeq ($(OS_DIMM),ndctl)
 CXXFLAGS += -DSDS_ENABLED

@@ -255,7 +255,18 @@ To build dpkg packages without running tests:
 	$ make BUILD_PACKAGE_CHECK=n dpkg
 ```
 This requires **devscripts** to be installed.
-
+'''
+Choice of adding the gperftools in the benchmarks for profiling their critical code section:
+**Important Note:** the version of gperftools has to support ProfilerPause/ProfilerResume operations
+as indicated by https://gist.github.com/tmm1/8031600 / can be found in https://github.com/dimstav23/gperftools.git
+```
+	$ export GPERF_PATH=/path/to/gperftools/installation
+        $ make clean
+        $ make GPERF=1
+        $ sudo make install GPERF=1
+        or
+        $ make install GPERF=1 prefix=/absolute/path/for/build/directory/
+```
 ### Testing Libraries on Linux and FreeBSD
 
 Before running the tests, you may need to prepare a test configuration file (src/test/testconfig.sh). Please see the available configuration settings in the example file [src/test/testconfig.sh.example](src/test/testconfig.sh.example).
