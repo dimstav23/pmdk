@@ -64,6 +64,21 @@ struct obj_tx_worker;
 int obj_tx_init(struct benchmark *bench, struct benchmark_args *args);
 int obj_tx_exit(struct benchmark *bench, struct benchmark_args *args);
 
+
+/*
+ * type_pmdk_func_mode -- type PMDK func mode
+ */
+enum type_pmdk_func_mode {
+	PMDK_READ,
+	PMDK_WRITE,
+	PMDK_READ_AND_WRITE,
+	PMDK_PUT,
+	PMDK_GET,
+	PMDK_UPDATE,
+	PMDK_DELETE,
+	PMDK_UNKNOWN
+};
+
 /*
  * type_num_mode -- type number mode
  */
@@ -179,6 +194,7 @@ struct obj_tx_args {
 	 *		- dram - does not use PMEM
 	 */
 	char *lib;
+	char *pmdk_func; 	/* type of pmdk func */
 	unsigned nested;    /* number of nested transactions */
 	unsigned min_size;  /* minimum allocation size */
 	unsigned min_rsize; /* minimum reallocation size */
@@ -200,9 +216,10 @@ static struct obj_tx_bench {
 	size_t *resizes;    /* array to store size of each reallocation */
 	size_t n_objs;      /* number of objects to allocate */
 	int type_mode;      /* type number mode */
-	int op_mode;	/* type of operation */
+	int op_mode;		/* type of operation */
 	int lib_mode;       /* type of operation used in initialization */
-	int lib_op;	 /* type of main operation */
+	int lib_op;	 		/* type of main operation */
+	int pmdk_func; 		/* type of pmdk func */
 	int lib_op_free;    /* type of main operation */
 	int nesting_mode;   /* type of nesting in main operation */
 	fn_num_t n_oid;     /* returns object's number in array */
@@ -464,6 +481,203 @@ add_range_tx(struct obj_tx_bench *obj_bench, struct worker_info *worker,
 }
 
 /*
+ * pmdk_read -- 
+ */
+static int
+pmdk_read(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	size_t type_num = obj_bench->fn_type_num(obj_bench, worker->index, idx);
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	void* object_data __attribute__((unused)) = NULL;
+	TX_BEGIN(obj_bench->pop)
+	{
+		obj_worker->oids[idx].oid = pmemobj_tx_zalloc(obj_bench->sizes[idx], type_num);//, POBJ_XALLOC_NO_FLUSH
+		if (OID_IS_NULL(obj_worker->oids[idx].oid)) {
+			perror("pmdk_pmemobj_tx_alloc");
+			return -1;
+		}
+		object_data = pmemobj_direct(obj_worker->oids[idx].oid);
+	}
+	TX_ONABORT
+	{
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+	return ret;
+}
+
+/*
+ * pmdk_write -- 
+ */
+static int
+pmdk_write(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	size_t type_num = obj_bench->fn_type_num(obj_bench, worker->index, idx);
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	uint8_t* buffer =(uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
+	TX_BEGIN(obj_bench->pop)
+	{
+		obj_worker->oids[idx].oid = pmemobj_tx_zalloc(obj_bench->sizes[idx], type_num);//, POBJ_XALLOC_NO_FLUSH
+		if (OID_IS_NULL(obj_worker->oids[idx].oid)) {
+			perror("pmdk_pmemobj_tx_alloc");
+			return -1;
+		}
+		pmemobj_tx_add_range(obj_worker->oids[idx].oid, 0, obj_bench->sizes[idx]);
+		void* pmem_ptr = pmemobj_direct(obj_worker->oids[idx].oid);
+		pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx], 0);
+		//pmemobj_memcpy_persist(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx]);
+		free(buffer);
+	}
+	TX_ONABORT
+	{
+		free(buffer);
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+	return ret;
+}
+
+/*
+ * pmdk_read_and_write -- 
+ */
+static int
+pmdk_read_and_write(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	size_t type_num = obj_bench->fn_type_num(obj_bench, worker->index, idx);
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	uint8_t* buffer =(uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
+	TX_BEGIN(obj_bench->pop)
+	{
+		obj_worker->oids[idx].oid = pmemobj_tx_zalloc(obj_bench->sizes[idx], type_num);//, POBJ_XALLOC_NO_FLUSH
+		if (OID_IS_NULL(obj_worker->oids[idx].oid)) {
+			perror("pmdk_pmemobj_tx_alloc");
+			return -1;
+		}
+		pmemobj_tx_add_range(obj_worker->oids[idx].oid, 0, obj_bench->sizes[idx]);
+		void* pmem_ptr = pmemobj_direct(obj_worker->oids[idx].oid);
+		pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx], 0);
+		pmem_ptr = pmemobj_direct(obj_worker->oids[idx].oid);
+		//pmemobj_memcpy_persist(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx]);
+		free(buffer);
+	}
+	TX_ONABORT
+	{
+		free(buffer);
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+	return ret;
+}
+
+/*
+ * pmdk_put -- 
+ */
+static int
+pmdk_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	size_t type_num = obj_bench->fn_type_num(obj_bench, worker->index, idx);
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	//char const *data_to_write = "brand new data\n";
+	TX_BEGIN(obj_bench->pop)
+	{
+		obj_worker->oids[idx].oid = pmemobj_tx_zalloc(obj_bench->sizes[idx], type_num);//, POBJ_XALLOC_NO_FLUSH
+		if (OID_IS_NULL(obj_worker->oids[idx].oid)) {
+			perror("pmdk_pmemobj_tx_alloc");
+			return -1;
+		}
+		//sobj_tx_add_range(obj_worker->oids[idx].oid, 0, obj_bench->sizes[idx]);
+		//sobj_tx_write(obj_bench->pop, obj_worker->oids[idx].oid, (void*)data_to_write);
+		//sobj_tx_read(obj_bench->pop, obj_worker->oids[idx].oid);
+	}
+	TX_ONABORT
+	{
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+	return ret;
+}
+
+/*
+ * pmdk_get -- 
+ */
+static int
+pmdk_get(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	void* ret = NULL;
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	TX_BEGIN(obj_bench->pop)
+	{
+		ret = pmemobj_direct(obj_worker->oids[idx].oid);
+	}
+	TX_ONABORT
+	{
+		fprintf(stderr, "transaction failed\n");
+		ret = NULL;
+	}
+	TX_END
+
+	return(ret==NULL);
+}
+
+/*
+ * pmdk_update -- 
+ */
+static int
+pmdk_update(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	uint8_t* buffer =(uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
+	TX_BEGIN(obj_bench->pop)
+	{
+		pmemobj_tx_add_range(obj_worker->oids[idx].oid, 0, obj_bench->sizes[idx]);
+		void* pmem_ptr = pmemobj_direct(obj_worker->oids[idx].oid);
+		pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx], 0);
+		//pmemobj_memcpy_persist(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[idx]);
+		free(buffer);
+	}
+	TX_ONABORT
+	{
+		free(buffer);
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+
+	return ret;
+}
+
+/*
+ * pmdk_delete -- 
+ */
+static int
+pmdk_delete(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	TX_BEGIN(obj_bench->pop)
+	{
+		ret = pmemobj_tx_free(obj_worker->oids[idx].oid);
+	}
+	TX_ONABORT
+	{
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+
+	return ret;
+}
+
+/*
  * obj_op_sim -- main function for benchmarks which simulates nested
  * transactions on dram or pmemobj atomic API by calling function recursively.
  */
@@ -602,6 +816,34 @@ static fn_parse_t parse_op[] = {parse_op_mode, parse_op_mode_add_range};
 
 static fn_op_t nestings[] = {obj_op_sim, obj_op_tx};
 
+static fn_op_t pmdk_op[] = {pmdk_read, pmdk_write, pmdk_read_and_write, pmdk_put, pmdk_get, pmdk_update, pmdk_delete};
+
+
+/*
+ * parse_pmdk_func_mode -- converts string to type_num_mode enum
+ */
+static enum type_pmdk_func_mode
+parse_pmdk_func_mode(const char *arg)
+{
+	if (strcmp(arg, "read") == 0)
+		return PMDK_READ;
+	else if (strcmp(arg, "write") == 0)
+		return PMDK_WRITE;
+	else if (strcmp(arg, "read_and_write") == 0)
+		return PMDK_READ_AND_WRITE;
+	else if (strcmp(arg, "put") == 0)
+		return PMDK_PUT;
+	else if (strcmp(arg, "get") == 0)
+		return PMDK_GET;
+	else if (strcmp(arg, "update") == 0)
+		return PMDK_UPDATE;
+	else if (strcmp(arg, "delete") == 0)
+		return PMDK_DELETE;
+
+	fprintf(stderr, "unknown anchor func mode\n");
+	return PMDK_UNKNOWN;
+}
+
 /*
  * parse_type_num_mode -- converts string to type_num_mode enum
  */
@@ -705,6 +947,21 @@ rand_values(size_t min, size_t max, size_t n_ops)
 			sizes[i] = (rand() % size) + min;
 	}
 	return sizes;
+}
+
+/*
+ * obj_tx_pmdk_op -- main operations of the pmdk operation benchmarks.
+ */
+static int
+obj_tx_pmdk_op(struct benchmark *bench, struct operation_info *info)
+{
+	auto *obj_bench = (struct obj_tx_bench *)pmembench_get_priv(bench);
+	auto *obj_worker = (struct obj_tx_worker *)info->worker->priv;
+	if (pmdk_op[obj_bench->pmdk_func](obj_bench, info->worker,
+					    info->index) != 0)
+		return -1;
+	obj_worker->tx_level = 0;
+	return 0;
 }
 
 /*
@@ -818,6 +1075,30 @@ obj_tx_exit_worker(struct benchmark *bench, struct benchmark_args *args,
 	else
 		free(obj_worker->oids);
 	free(obj_worker);
+}
+
+/*
+ * obj_tx_pmdk_init -- specific part of the obj_tx_pmdk initialization.
+ */
+static int
+obj_tx_pmdk_init(struct benchmark *bench, struct benchmark_args *args)
+{
+	if (obj_tx_init(bench, args) != 0)
+		return -1;
+
+	auto *obj_bench = (struct obj_tx_bench *)pmembench_get_priv(bench);
+	obj_bench->fn_op = pmdk_op;
+
+	/*
+	 * Generally all objects which will be allocated during main operation
+	 * need to be released. Only exception is situation where transaction
+	 * (inside which object is allocating) is aborted. Then object is not
+	 * allocated so there is no need to free it in exit operation.
+	 */
+	if (obj_bench->lib_op == LIB_MODE_OBJ_TX &&
+	    obj_bench->op_mode != OP_MODE_COMMIT)
+		obj_bench->lib_op_free = LIB_MODE_NONE;
+	return 0;
 }
 
 /*
@@ -964,6 +1245,12 @@ obj_tx_init(struct benchmark *bench, struct benchmark_args *args)
 
 	if (obj_bench.lib_op == LIB_MODE_NONE)
 		return -1;
+	
+	obj_bench.pmdk_func = obj_bench.obj_args->pmdk_func != nullptr
+		? parse_pmdk_func_mode(obj_bench.obj_args->pmdk_func)
+		: PMDK_READ;
+	if (obj_bench.pmdk_func == PMDK_UNKNOWN)
+		return -1;
 
 	obj_bench.lib_mode = obj_bench.lib_op == LIB_MODE_DRAM
 		? LIB_MODE_DRAM
@@ -1088,12 +1375,21 @@ obj_tx_realloc_exit(struct benchmark *bench, struct benchmark_args *args)
 }
 
 /* Array defining common command line arguments. */
-static struct benchmark_clo obj_tx_clo[8];
+//static struct benchmark_clo obj_tx_clo[8];
+static struct benchmark_clo obj_tx_clo[9];
 
 static struct benchmark_info obj_tx_alloc;
 static struct benchmark_info obj_tx_free;
 static struct benchmark_info obj_tx_realloc;
 static struct benchmark_info obj_tx_add_range;
+
+static struct benchmark_info obj_tx_read;
+static struct benchmark_info obj_tx_write;
+static struct benchmark_info obj_tx_read_and_write;
+static struct benchmark_info obj_tx_put;
+static struct benchmark_info obj_tx_get;
+static struct benchmark_info obj_tx_update;
+static struct benchmark_info obj_tx_delete;
 
 CONSTRUCTOR(pmemobj_tx_constructor)
 void
@@ -1179,6 +1475,13 @@ pmemobj_tx_constructor(void)
 	obj_tx_clo[7].type = CLO_TYPE_FLAG;
 	obj_tx_clo[7].off = clo_field_offset(struct obj_tx_args, change_type);
 
+	obj_tx_clo[8].opt_short = 'P';
+	obj_tx_clo[8].opt_long = "pmdk-func";
+	obj_tx_clo[8].descr = "Type of PMDK Func";
+	obj_tx_clo[8].def = "read";
+	obj_tx_clo[8].off = clo_field_offset(struct obj_tx_args, pmdk_func);
+	obj_tx_clo[8].type = CLO_TYPE_STR;
+
 	obj_tx_alloc.name = "obj_tx_alloc";
 	obj_tx_alloc.brief = "pmemobj_tx_alloc() benchmark";
 	obj_tx_alloc.init = obj_tx_alloc_init;
@@ -1246,4 +1549,123 @@ pmemobj_tx_constructor(void)
 	obj_tx_add_range.rm_file = true;
 	obj_tx_add_range.allow_poolset = true;
 	REGISTER_BENCHMARK(obj_tx_add_range);
+
+	obj_tx_read.name = "obj_tx_read";
+	obj_tx_read.brief = "pmemobj_tx_read() benchmark";
+	obj_tx_read.init = obj_tx_pmdk_init;
+	obj_tx_read.exit = obj_tx_exit;
+	obj_tx_read.multithread = true;
+	obj_tx_read.multiops = true;
+	obj_tx_read.init_worker = obj_tx_init_worker; //obj_tx_init_worker_alloc_obj
+	obj_tx_read.free_worker = obj_tx_exit_worker;
+	obj_tx_read.operation = obj_tx_pmdk_op;
+	obj_tx_read.measure_time = true;
+	obj_tx_read.clos = obj_tx_clo;
+	obj_tx_read.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_read.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_read.rm_file = true;
+	obj_tx_read.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_read);
+
+	obj_tx_write.name = "obj_tx_write";
+	obj_tx_write.brief = "pmemobj_tx_write() benchmark";
+	obj_tx_write.init = obj_tx_pmdk_init;
+	obj_tx_write.exit = obj_tx_exit;
+	obj_tx_write.multithread = true;
+	obj_tx_write.multiops = true;
+	obj_tx_write.init_worker = obj_tx_init_worker;
+	obj_tx_write.free_worker = obj_tx_exit_worker;
+	obj_tx_write.operation = obj_tx_pmdk_op;
+	obj_tx_write.measure_time = true;
+	obj_tx_write.clos = obj_tx_clo;
+	obj_tx_write.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_write.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_write.rm_file = true;
+	obj_tx_write.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_write);
+
+	obj_tx_read_and_write.name = "obj_tx_read_and_write";
+	obj_tx_read_and_write.brief = "pmemobj_tx_read_and_write benchmark";
+	obj_tx_read_and_write.init = obj_tx_pmdk_init;
+	obj_tx_read_and_write.exit = obj_tx_exit;
+	obj_tx_read_and_write.multithread = true;
+	obj_tx_read_and_write.multiops = true;
+	obj_tx_read_and_write.init_worker = obj_tx_init_worker;
+	obj_tx_read_and_write.free_worker = obj_tx_exit_worker;
+	obj_tx_read_and_write.operation = obj_tx_pmdk_op;
+	obj_tx_read_and_write.measure_time = true;
+	obj_tx_read_and_write.clos = obj_tx_clo;
+	obj_tx_read_and_write.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_read_and_write.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_read_and_write.rm_file = true;
+	obj_tx_read_and_write.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_read_and_write);
+
+	obj_tx_put.name = "obj_tx_put";
+	obj_tx_put.brief = "pmemobj_tx_put benchmark";
+	obj_tx_put.init = obj_tx_pmdk_init;
+	obj_tx_put.exit = obj_tx_exit;
+	obj_tx_put.multithread = true;
+	obj_tx_put.multiops = true;
+	obj_tx_put.init_worker = obj_tx_init_worker;
+	obj_tx_put.free_worker = obj_tx_exit_worker;
+	obj_tx_put.operation = obj_tx_pmdk_op;
+	obj_tx_put.measure_time = true;
+	obj_tx_put.clos = obj_tx_clo;
+	obj_tx_put.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_put.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_put.rm_file = true;
+	obj_tx_put.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_put);
+
+	obj_tx_get.name = "obj_tx_get";
+	obj_tx_get.brief = "pmemobj_tx_get benchmark";
+	obj_tx_get.init = obj_tx_pmdk_init;
+	obj_tx_get.exit = obj_tx_exit;
+	obj_tx_get.multithread = true;
+	obj_tx_get.multiops = true;
+	obj_tx_get.init_worker = obj_tx_init_worker_alloc_obj; //warmup - alloc the objects
+	obj_tx_get.free_worker = obj_tx_exit_worker;
+	obj_tx_get.operation = obj_tx_pmdk_op;
+	obj_tx_get.measure_time = true;
+	obj_tx_get.clos = obj_tx_clo;
+	obj_tx_get.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_get.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_get.rm_file = true;
+	obj_tx_get.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_get);
+
+	obj_tx_update.name = "obj_tx_update";
+	obj_tx_update.brief = "pmemobj_tx_update benchmark";
+	obj_tx_update.init = obj_tx_pmdk_init;
+	obj_tx_update.exit = obj_tx_exit;
+	obj_tx_update.multithread = true;
+	obj_tx_update.multiops = true;
+	obj_tx_update.init_worker = obj_tx_init_worker_alloc_obj; //warmup - alloc the objects
+	obj_tx_update.free_worker = obj_tx_exit_worker;
+	obj_tx_update.operation = obj_tx_pmdk_op;
+	obj_tx_update.measure_time = true;
+	obj_tx_update.clos = obj_tx_clo;
+	obj_tx_update.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_update.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_update.rm_file = true;
+	obj_tx_update.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_update);
+
+	obj_tx_delete.name = "obj_tx_delete";
+	obj_tx_delete.brief = "pmemobj_tx_delete benchmark";
+	obj_tx_delete.init = obj_tx_pmdk_init;
+	obj_tx_delete.exit = obj_tx_exit;
+	obj_tx_delete.multithread = true;
+	obj_tx_delete.multiops = true;
+	obj_tx_delete.init_worker = obj_tx_init_worker_alloc_obj; //warmup - alloc the objects
+	obj_tx_delete.free_worker = obj_tx_exit_worker;
+	obj_tx_delete.operation = obj_tx_pmdk_op;
+	obj_tx_delete.measure_time = true;
+	obj_tx_delete.clos = obj_tx_clo;
+	obj_tx_delete.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_delete.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_delete.rm_file = true;
+	obj_tx_delete.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_delete);
 }
