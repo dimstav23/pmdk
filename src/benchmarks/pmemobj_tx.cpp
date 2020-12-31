@@ -957,9 +957,15 @@ obj_tx_pmdk_op(struct benchmark *bench, struct operation_info *info)
 {
 	auto *obj_bench = (struct obj_tx_bench *)pmembench_get_priv(bench);
 	auto *obj_worker = (struct obj_tx_worker *)info->worker->priv;
-	if (pmdk_op[obj_bench->pmdk_func](obj_bench, info->worker,
-					    info->index) != 0)
-		return -1;
+	unsigned internal_repeats = info->args->internal_repeats;
+	do {
+		if (pmdk_op[obj_bench->pmdk_func](obj_bench, info->worker,
+							info->index) != 0)
+			return -1;
+		internal_repeats--;
+	}
+	while (internal_repeats > 0);
+
 	obj_worker->tx_level = 0;
 	return 0;
 }
@@ -1271,7 +1277,10 @@ obj_tx_init(struct benchmark *bench, struct benchmark_args *args)
 		? obj_bench.obj_args->rsize
 		: args->dsize;
 	size_t psize = args->n_ops_per_thread * (dsize + ALLOC_OVERHEAD) *
-		args->n_threads;
+					args->n_threads;
+					
+	if (args->internal_repeats != 0)
+		psize *= args->internal_repeats;		
 
 	psize += PMEMOBJ_MIN_POOL;
 	psize = (size_t)(psize * FACTOR);

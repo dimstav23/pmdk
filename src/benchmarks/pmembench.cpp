@@ -127,7 +127,7 @@ static struct version_s {
 static struct bench_list benchmarks;
 
 /* common arguments for benchmarks */
-static struct benchmark_clo pmembench_clos[13];
+static struct benchmark_clo pmembench_clos[14];
 
 /* list of arguments for pmembench */
 static struct benchmark_clo pmembench_opts[2];
@@ -298,6 +298,19 @@ pmembench_constructor(void)
 	pmembench_clos[12].off =
 		clo_field_offset(struct benchmark_args, is_dynamic_poolset);
 	pmembench_clos[12].ignore_in_res = true;
+
+	pmembench_clos[13].opt_short = 'i';
+	pmembench_clos[13].opt_long = "internal_repeats";
+	pmembench_clos[13].type = CLO_TYPE_UINT;
+	pmembench_clos[13].descr = "Number of internal repeats of scenario";
+	pmembench_clos[13].off =
+		clo_field_offset(struct benchmark_args, internal_repeats);
+	pmembench_clos[13].def = "1";
+	pmembench_clos[13].type_uint.size =
+		clo_field_size(struct benchmark_args, internal_repeats);
+	pmembench_clos[13].type_uint.base = CLO_INT_BASE_DEC | CLO_INT_BASE_HEX;
+	pmembench_clos[13].type_uint.min = 1;
+	pmembench_clos[13].type_uint.max = ULONG_MAX;
 }
 
 /*
@@ -712,6 +725,7 @@ results_alloc(struct benchmark_args *args)
 		(struct total_results *)malloc(sizeof(*total));
 	assert(total != nullptr);
 	total->nrepeats = args->repeats;
+	total->internal_repeats = args->internal_repeats;
 	total->nthreads = args->n_threads;
 	total->nops = args->n_ops_per_thread;
 	total->res = (struct bench_results *)malloc(args->repeats *
@@ -837,8 +851,12 @@ get_total_results(struct total_results *tres)
 	tres->total.avg /= (double)tres->nrepeats;
 
 	/* number of operations per second */
-	tres->nopsps =
-		(double)tres->nops * (double)tres->nthreads / tres->total.avg;
+	if (tres->internal_repeats != 0)
+		tres->nopsps =
+		(double)tres->nops * (double)tres->internal_repeats * (double)tres->nthreads / tres->total.avg;
+	else
+		tres->nopsps =
+			(double)tres->nops * (double)tres->nthreads / tres->total.avg;
 
 	/* std deviation of total time */
 	for (size_t i = 0; i < tres->nrepeats; i++) {
@@ -861,6 +879,9 @@ get_total_results(struct total_results *tres)
 				benchmark_time_diff(&lat, beg,
 						    &thres->end_op[o]);
 				uint64_t nsecs = benchmark_time_get_nsecs(&lat);
+
+				if (tres->internal_repeats != 0)
+					nsecs /= tres->internal_repeats; //each operation consists of internal_repeats operations, so split the duration accordingly
 
 				/* min, max latency */
 				if (nsecs > tres->latency.max)
@@ -895,6 +916,9 @@ get_total_results(struct total_results *tres)
 				benchmark_time_diff(&lat, beg,
 						    &thres->end_op[o]);
 				uint64_t nsecs = benchmark_time_get_nsecs(&lat);
+
+				if (tres->internal_repeats != 0)
+					nsecs /= tres->internal_repeats; //each operation consists of internal_repeats operations, so split the duration accordingly
 
 				uint64_t dev = (nsecs - tres->latency.avg);
 				dev *= dev;

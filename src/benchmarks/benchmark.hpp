@@ -99,6 +99,7 @@ struct benchmark_args {
 	unsigned min_exe_time;   /* minimal execution time */
 	bool help;		 /* print help for benchmark */
 	void *opts;		 /* benchmark specific arguments */
+	unsigned internal_repeats; /* number of internal repeats of a benchmark configuration - treated as a single operation */ 
 };
 
 /*
@@ -161,6 +162,7 @@ struct total_results {
 	struct results total;
 	struct latency latency;
 	struct bench_results *res;
+	size_t internal_repeats;
 };
 
 /*
