@@ -87,6 +87,11 @@ ifeq ($(WSTRINGOP_TRUNCATION_AVAILABLE), y)
 DEFAULT_CFLAGS += -DSTRINGOP_TRUNCATION_SUPPORTED
 endif
 
+#if gperf is enabled, add it to the general cflags
+ifeq ($(GPERF), 1)
+DEFAULT_CFLAGS += -DGPERF
+endif
+
 ifeq ($(DEBUG),1)
 # Undefine _FORTIFY_SOURCE in case it's set in system-default or
 # user-defined CFLAGS as it conflicts with -O0.

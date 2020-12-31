@@ -69,7 +69,9 @@
 #include "rpmem_util.h"
 #endif
 
+#ifdef GPERF
 #include "profiler.h"
+#endif
 
 /* average time required to get a current time from the system */
 unsigned long long Get_time_avg;
@@ -400,13 +402,17 @@ static int
 pmembench_run_worker(struct benchmark *bench, struct worker_info *winfo)
 {
 	benchmark_time_get(&winfo->beg);
+#ifdef GPERF
 	ProfilerResume();
+#endif
 	for (size_t i = 0; i < winfo->nops; i++) {
 		if (bench->info->operation(bench, &winfo->opinfo[i]))
 			return -1;
 		benchmark_time_get(&winfo->opinfo[i].end);
 	}
+#ifdef GPERF
 	ProfilerPause();
+#endif
 	benchmark_time_get(&winfo->end);
 
 	return 0;
@@ -1534,15 +1540,19 @@ pmembench_run_scenarios(struct pmembench *pb, struct scenarios *ss)
 	struct scenario *scenario;
 	FOREACH_SCENARIO(scenario, ss)
 	{
+#ifdef GPERF
 		ProfilerStart(scenario->name);
 		ProfilerPause();
-
+#endif
 		if (pmembench_run_scenario(pb, scenario) != 0) {
+#ifdef GPERF
 			ProfilerStop();
+#endif
 			return -1;
 		}
-
+#ifdef GPERF
 		ProfilerStop();
+#endif
 	}
 	return 0;
 }
