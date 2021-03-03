@@ -802,7 +802,9 @@ huge_ensure_header_type(const struct memory_block *m,
 {
 	struct chunk_header *hdr = heap_get_chunk_hdr(m->heap, m);
 	ASSERTeq(hdr->type, CHUNK_TYPE_FREE);
-
+	//os_thread_t self;
+	//os_thread_self(&self);
+	//printf("thread : %llx huge_ensure_header_type %p \n", self.align, hdr);
 	if ((hdr->flags & header_type_to_flag[t]) == 0) {
 		VALGRIND_ADD_TO_TX(hdr, sizeof(*hdr));
 		uint16_t f = ((uint16_t)header_type_to_flag[t]);
@@ -1165,6 +1167,9 @@ huge_write_footer(struct chunk_header *hdr, uint32_t size_idx)
 	*(hdr + size_idx - 1) = f;
 	/* no need to persist, footers are recreated in heap_populate_buckets */
 	VALGRIND_SET_CLEAN(hdr + size_idx - 1, sizeof(f));
+	//os_thread_t self;
+	//os_thread_self(&self);
+	//printf("thread_id : %lld %s offset %ld size_idx : %d\n", self.align, __func__, (uintptr_t)(hdr+size_idx-1) , size_idx);
 }
 
 /*
@@ -1185,9 +1190,11 @@ static void
 run_calc_free(const struct memory_block *m,
 	uint32_t *free_space, uint32_t *max_free_block)
 {
+	//printf("%s\n", __func__);
 	struct run_bitmap b;
 	run_get_bitmap(m, &b);
 	for (unsigned i = 0; i < b.nvalues; ++i) {
+		//printf("i = %d %p %lx\n", i, &b.values[i], b.values[i]);
 		uint64_t value = ~b.values[i];
 		if (value == 0)
 			continue;
@@ -1328,7 +1335,9 @@ memblock_huge_init(struct palloc_heap *heap,
 	};
 
 	struct chunk_header *hdr = heap_get_chunk_hdr(heap, &m);
-
+	//os_thread_t self;
+	//os_thread_self(&self);
+	//printf("thread : %llx memblock_huge_init offset %p chunk id %d size_idx %d\n", self.align, hdr, chunk_id, size_idx);
 	VALGRIND_DO_MAKE_MEM_UNDEFINED(hdr, sizeof(*hdr));
 	VALGRIND_ANNOTATE_NEW_MEMORY(hdr, sizeof(*hdr));
 
@@ -1363,6 +1372,9 @@ memblock_run_init(struct palloc_heap *heap,
 
 	struct chunk_run *run = heap_get_chunk_run(heap, &m);
 	size_t runsize = SIZEOF_RUN(run, size_idx);
+	//os_thread_t self;
+	//os_thread_self(&self);
+	//printf("thread : %llx memblock_run_init %p chunk id %d size_idx %d\n", self.align, run, chunk_id, size_idx);
 
 	VALGRIND_DO_MAKE_MEM_UNDEFINED(run, runsize);
 

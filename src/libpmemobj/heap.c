@@ -557,6 +557,7 @@ heap_run_into_free_chunk(struct palloc_heap *heap,
 	struct bucket *bucket,
 	struct memory_block *m)
 {
+	//printf("%s\n", __func__);
 	struct chunk_header *hdr = heap_get_chunk_hdr(heap, m);
 
 	m->block_off = 0;
@@ -591,6 +592,7 @@ heap_run_into_free_chunk(struct palloc_heap *heap,
 static int
 heap_reclaim_run(struct palloc_heap *heap, struct memory_block *m, int startup)
 {
+	//printf("%s\n", __func__);
 	struct chunk_run *run = heap_get_chunk_run(heap, m);
 	struct chunk_header *hdr = heap_get_chunk_hdr(heap, m);
 
@@ -632,6 +634,7 @@ static void
 heap_reclaim_zone_garbage(struct palloc_heap *heap, struct bucket *bucket,
 	uint32_t zone_id)
 {
+	//printf("%s\n", __func__);
 	struct zone *z = ZID_TO_ZONE(heap->layout, zone_id);
 
 	for (uint32_t i = 0; i < z->header.size_idx; ) {
@@ -1735,6 +1738,7 @@ heap_verify_zone(struct zone *zone)
 
 	uint32_t i;
 	for (i = 0; i < zone->header.size_idx; ) {
+		//printf("header offset : %lx header size_idx : %d\n",(uintptr_t)&zone->chunk_headers[i], zone->chunk_headers[i].size_idx);
 		if (heap_verify_chunk_header(&zone->chunk_headers[i]))
 			return -1;
 

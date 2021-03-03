@@ -33,7 +33,7 @@
 #
 # examples/libpmemobj/Makefile -- build the libpmemobj examples
 #
-PROGS = manpage btree pi lists setjmp
+PROGS = manpage btree pi lists setjmp thread_test tx_internal_log_alloc
 DIRS = pminvaders pmemlog pmemblk string_store string_store_tx\
 	string_store_tx_type hashmap tree_map pmemobjfs map libart array\
 	linkedlist list_map slab_allocator queue
@@ -50,5 +50,10 @@ btree: btree.o
 pi: pi.o
 lists: lists.o
 
+thread_test: thread_test.o
+tx_internal_log_alloc: tx_internal_log_alloc.o
+
 setjmp: CFLAGS += -O2
 setjmp: setjmp.o
+
+

@@ -207,7 +207,7 @@ lane_undo_extend(void *base, uint64_t *redo, uint64_t gen_num)
 	PMEMobjpool *pop = base;
 	struct tx_parameters *params = pop->tx_params;
 	size_t s = SIZEOF_ALIGNED_ULOG(params->cache_size);
-
+	//printf("undo log extension requested\n");
 	return pmalloc_construct(base, redo, s, lane_ulog_constructor, &gen_num,
 		0, OBJ_INTERNAL_OBJECT_MASK, 0);
 }

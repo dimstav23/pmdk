@@ -76,6 +76,7 @@ enum type_pmdk_func_mode {
 	PMDK_GET,
 	PMDK_UPDATE,
 	PMDK_DELETE,
+	PMDK_GET_PUT,
 	PMDK_UNKNOWN
 };
 
@@ -195,6 +196,8 @@ struct obj_tx_args {
 	 */
 	char *lib;
 	char *pmdk_func; 	/* type of pmdk func */
+	int get_ratio; 		/* read percentage */
+	int tx_ops; 		/* operations per transaction */
 	unsigned nested;    /* number of nested transactions */
 	unsigned min_size;  /* minimum allocation size */
 	unsigned min_rsize; /* minimum reallocation size */
@@ -678,6 +681,60 @@ pmdk_delete(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t i
 }
 
 /*
+ * pmdk_get_put -- 
+ */
+static int
+pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t idx)
+{
+	int ret = 0;
+	void* ret_obj = NULL;
+	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
+	uint8_t* buffer =(uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
+	//printf("get ratio %d\n",obj_bench->obj_args->get_ratio);
+	TX_BEGIN(obj_bench->pop)
+	{
+		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
+			if (rand()%100 < obj_bench->obj_args->get_ratio) {
+				ret_obj = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				assert(ret_obj!=NULL);
+			}
+			else {
+				pmemobj_tx_add_range(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 0, obj_bench->sizes[(idx+i)%obj_bench->n_objs]);
+				void* pmem_ptr = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(idx+i)%obj_bench->n_objs], 0);
+			}
+		}
+		free(buffer);
+	
+	/*
+		int new_idx = 0;
+		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
+			new_idx = idx + i;
+			if (((new_idx % 10) * 10)  < obj_bench->obj_args->get_ratio) {
+				ret_obj = pmemobj_direct(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid);
+				assert(ret_obj!=NULL);
+			}
+			else {
+				pmemobj_tx_add_range(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid, 0, obj_bench->sizes[new_idx]);
+				void* pmem_ptr = pmemobj_direct(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid);
+				pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(new_idx)%obj_bench->n_objs], 0);
+			}
+		}
+		free(buffer);
+	*/	
+	}
+	TX_ONABORT
+	{
+		free(buffer);
+		fprintf(stderr, "transaction failed\n");
+		ret = -1;
+	}
+	TX_END
+
+	return(ret);
+}
+
+/*
  * obj_op_sim -- main function for benchmarks which simulates nested
  * transactions on dram or pmemobj atomic API by calling function recursively.
  */
@@ -816,7 +873,7 @@ static fn_parse_t parse_op[] = {parse_op_mode, parse_op_mode_add_range};
 
 static fn_op_t nestings[] = {obj_op_sim, obj_op_tx};
 
-static fn_op_t pmdk_op[] = {pmdk_read, pmdk_write, pmdk_read_and_write, pmdk_put, pmdk_get, pmdk_update, pmdk_delete};
+static fn_op_t pmdk_op[] = {pmdk_read, pmdk_write, pmdk_read_and_write, pmdk_put, pmdk_get, pmdk_update, pmdk_delete, pmdk_get_put};
 
 
 /*
@@ -839,7 +896,8 @@ parse_pmdk_func_mode(const char *arg)
 		return PMDK_UPDATE;
 	else if (strcmp(arg, "delete") == 0)
 		return PMDK_DELETE;
-
+	else if (strcmp(arg, "get_put") == 0)
+		return PMDK_GET_PUT;
 	fprintf(stderr, "unknown anchor func mode\n");
 	return PMDK_UNKNOWN;
 }
@@ -957,15 +1015,12 @@ obj_tx_pmdk_op(struct benchmark *bench, struct operation_info *info)
 {
 	auto *obj_bench = (struct obj_tx_bench *)pmembench_get_priv(bench);
 	auto *obj_worker = (struct obj_tx_worker *)info->worker->priv;
-	unsigned internal_repeats = info->args->internal_repeats;
-	do {
+	unsigned op_calls = info->args->internal_repeats / obj_bench->obj_args->tx_ops;
+	for (unsigned i = 0 ; i < op_calls ; i++) {
 		if (pmdk_op[obj_bench->pmdk_func](obj_bench, info->worker,
-							info->index) != 0)
+					    info->index) != 0)
 			return -1;
-		internal_repeats--;
 	}
-	while (internal_repeats > 0);
-
 	obj_worker->tx_level = 0;
 	return 0;
 }
@@ -1384,8 +1439,8 @@ obj_tx_realloc_exit(struct benchmark *bench, struct benchmark_args *args)
 }
 
 /* Array defining common command line arguments. */
-//static struct benchmark_clo obj_tx_clo[8];
-static struct benchmark_clo obj_tx_clo[9];
+static struct benchmark_clo obj_tx_clo[11];
+static int extra_nclos = 3;
 
 static struct benchmark_info obj_tx_alloc;
 static struct benchmark_info obj_tx_free;
@@ -1399,6 +1454,7 @@ static struct benchmark_info obj_tx_put;
 static struct benchmark_info obj_tx_get;
 static struct benchmark_info obj_tx_update;
 static struct benchmark_info obj_tx_delete;
+static struct benchmark_info obj_tx_get_put;
 
 CONSTRUCTOR(pmemobj_tx_constructor)
 void
@@ -1491,6 +1547,30 @@ pmemobj_tx_constructor(void)
 	obj_tx_clo[8].off = clo_field_offset(struct obj_tx_args, pmdk_func);
 	obj_tx_clo[8].type = CLO_TYPE_STR;
 
+	obj_tx_clo[9].opt_short = 'g';
+	obj_tx_clo[9].opt_long = "get_ratio";
+	obj_tx_clo[9].type = CLO_TYPE_UINT;
+	obj_tx_clo[9].descr = "Read object ratio";
+	obj_tx_clo[9].off = clo_field_offset(struct obj_tx_args, get_ratio);
+	obj_tx_clo[9].def = "-1";
+	obj_tx_clo[9].type_uint.size =
+		clo_field_size(struct obj_tx_args, get_ratio);
+	obj_tx_clo[9].type_uint.base = CLO_INT_BASE_DEC | CLO_INT_BASE_HEX;
+	obj_tx_clo[9].type_uint.min = 0;
+	obj_tx_clo[9].type_uint.max = 100;
+
+	obj_tx_clo[10].opt_short = 't';
+	obj_tx_clo[10].opt_long = "tx_ops";
+	obj_tx_clo[10].type = CLO_TYPE_UINT;
+	obj_tx_clo[10].descr = "Number of operations per transaction";
+	obj_tx_clo[10].off = clo_field_offset(struct obj_tx_args, tx_ops);
+	obj_tx_clo[10].def = "1";
+	obj_tx_clo[10].type_uint.size =
+		clo_field_size(struct obj_tx_args, tx_ops);
+	obj_tx_clo[10].type_uint.base = CLO_INT_BASE_DEC | CLO_INT_BASE_HEX;
+	obj_tx_clo[10].type_uint.min = 1;
+	obj_tx_clo[10].type_uint.max = 20;
+
 	obj_tx_alloc.name = "obj_tx_alloc";
 	obj_tx_alloc.brief = "pmemobj_tx_alloc() benchmark";
 	obj_tx_alloc.init = obj_tx_alloc_init;
@@ -1502,7 +1582,7 @@ pmemobj_tx_constructor(void)
 	obj_tx_alloc.operation = obj_tx_op;
 	obj_tx_alloc.measure_time = true;
 	obj_tx_alloc.clos = obj_tx_clo;
-	obj_tx_alloc.nclos = ARRAY_SIZE(obj_tx_clo) - 3;
+	obj_tx_alloc.nclos = ARRAY_SIZE(obj_tx_clo) - 3 - extra_nclos;
 	obj_tx_alloc.opts_size = sizeof(struct obj_tx_args);
 	obj_tx_alloc.rm_file = true;
 	obj_tx_alloc.allow_poolset = true;
@@ -1519,7 +1599,7 @@ pmemobj_tx_constructor(void)
 	obj_tx_free.operation = obj_tx_op;
 	obj_tx_free.measure_time = true;
 	obj_tx_free.clos = obj_tx_clo;
-	obj_tx_free.nclos = ARRAY_SIZE(obj_tx_clo) - 3;
+	obj_tx_free.nclos = ARRAY_SIZE(obj_tx_clo) - 3 - extra_nclos;
 	obj_tx_free.opts_size = sizeof(struct obj_tx_args);
 	obj_tx_free.rm_file = true;
 	obj_tx_free.allow_poolset = true;
@@ -1536,7 +1616,7 @@ pmemobj_tx_constructor(void)
 	obj_tx_realloc.operation = obj_tx_op;
 	obj_tx_realloc.measure_time = true;
 	obj_tx_realloc.clos = obj_tx_clo;
-	obj_tx_realloc.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_realloc.nclos = ARRAY_SIZE(obj_tx_clo) - extra_nclos;
 	obj_tx_realloc.opts_size = sizeof(struct obj_tx_args);
 	obj_tx_realloc.rm_file = true;
 	obj_tx_realloc.allow_poolset = true;
@@ -1553,7 +1633,7 @@ pmemobj_tx_constructor(void)
 	obj_tx_add_range.operation = obj_tx_add_range_op;
 	obj_tx_add_range.measure_time = true;
 	obj_tx_add_range.clos = obj_tx_clo;
-	obj_tx_add_range.nclos = ARRAY_SIZE(obj_tx_clo) - 5;
+	obj_tx_add_range.nclos = ARRAY_SIZE(obj_tx_clo) - 5 - extra_nclos;
 	obj_tx_add_range.opts_size = sizeof(struct obj_tx_args);
 	obj_tx_add_range.rm_file = true;
 	obj_tx_add_range.allow_poolset = true;
@@ -1677,4 +1757,21 @@ pmemobj_tx_constructor(void)
 	obj_tx_delete.rm_file = true;
 	obj_tx_delete.allow_poolset = true;
 	REGISTER_BENCHMARK(obj_tx_delete);
+
+	obj_tx_get_put.name = "obj_tx_get_put";
+	obj_tx_get_put.brief = "pmemobj_tx_get_put benchmark";
+	obj_tx_get_put.init = obj_tx_pmdk_init;
+	obj_tx_get_put.exit = obj_tx_exit;
+	obj_tx_get_put.multithread = true;
+	obj_tx_get_put.multiops = true;
+	obj_tx_get_put.init_worker = obj_tx_init_worker_alloc_obj; //warmup - alloc the objects
+	obj_tx_get_put.free_worker = obj_tx_exit_worker;
+	obj_tx_get_put.operation = obj_tx_pmdk_op;
+	obj_tx_get_put.measure_time = true;
+	obj_tx_get_put.clos = obj_tx_clo;
+	obj_tx_get_put.nclos = ARRAY_SIZE(obj_tx_clo);
+	obj_tx_get_put.opts_size = sizeof(struct obj_tx_args);
+	obj_tx_get_put.rm_file = true;
+	obj_tx_get_put.allow_poolset = true;
+	REGISTER_BENCHMARK(obj_tx_get_put);
 }

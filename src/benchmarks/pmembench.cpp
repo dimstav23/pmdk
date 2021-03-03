@@ -851,12 +851,14 @@ get_total_results(struct total_results *tres)
 	tres->total.avg /= (double)tres->nrepeats;
 
 	/* number of operations per second */
-	if (tres->internal_repeats != 0)
+	if (tres->internal_repeats != 0) {
 		tres->nopsps =
 		(double)tres->nops * (double)tres->internal_repeats * (double)tres->nthreads / tres->total.avg;
-	else
+	}
+	else {
 		tres->nopsps =
 			(double)tres->nops * (double)tres->nthreads / tres->total.avg;
+	}
 
 	/* std deviation of total time */
 	for (size_t i = 0; i < tres->nrepeats; i++) {

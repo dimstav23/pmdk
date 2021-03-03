@@ -785,6 +785,7 @@ operation_process(struct operation_context *ctx)
 	 */
 	int redo_process = ctx->type == LOG_TYPE_REDO &&
 		ctx->pshadow_ops.offset != 0;
+	
 	if (redo_process &&
 	    ctx->pshadow_ops.offset == sizeof(struct ulog_entry_val)) {
 		struct ulog_entry_base *e = (struct ulog_entry_base *)
@@ -796,7 +797,7 @@ operation_process(struct operation_context *ctx)
 			redo_process = 0;
 		}
 	}
-
+	
 	if (redo_process) {
 		operation_process_persistent_redo(ctx);
 		ctx->state = OPERATION_CLEANUP;

@@ -564,7 +564,7 @@ ulog_entry_apply(const struct ulog_entry_base *e, int persist,
 	struct ulog_entry_buf *eb;
 
 	flush_fn f = persist ? p_ops->persist : p_ops->flush;
-
+	//os_thread_t self;
 	switch (t) {
 		case ULOG_OPERATION_AND:
 			ev = (struct ulog_entry_val *)e;
@@ -573,6 +573,9 @@ ulog_entry_apply(const struct ulog_entry_base *e, int persist,
 			*dst &= ev->value;
 			f(p_ops->base, dst, sizeof(uint64_t),
 				PMEMOBJ_F_RELAXED);
+			//printf("bitmap location : %p\n", dst);
+			//os_thread_self(&self);
+			//printf("thread : %lld bitmap location : %p\n", self.align, dst);
 		break;
 		case ULOG_OPERATION_OR:
 			ev = (struct ulog_entry_val *)e;
@@ -581,6 +584,9 @@ ulog_entry_apply(const struct ulog_entry_base *e, int persist,
 			*dst |= ev->value;
 			f(p_ops->base, dst, sizeof(uint64_t),
 				PMEMOBJ_F_RELAXED);
+			//printf("bitmap location : %p\n", dst);
+			//os_thread_self(&self);
+			//printf("thread : %lld bitmap location : %p\n", self.align, dst);
 		break;
 		case ULOG_OPERATION_SET:
 			ev = (struct ulog_entry_val *)e;
