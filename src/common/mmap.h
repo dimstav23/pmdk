@@ -56,6 +56,9 @@ extern int Mmap_no_random;
 extern void *Mmap_hint;
 extern char *Mmap_mapfile;
 
+#ifdef SCONE
+void *scone_kernel_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+#endif
 void *util_map_sync(void *addr, size_t len, int proto, int flags, int fd,
 	os_off_t offset, int *map_sync);
 void *util_map(int fd, os_off_t off, size_t len, int flags, int rdonly,

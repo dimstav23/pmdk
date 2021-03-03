@@ -51,6 +51,15 @@ static const char * const sscanf_os = "%p %p";
 static const char * const sscanf_os = "%p-%p";
 #endif
 
+#ifdef SCONE
+#define SYS_untrusted_mmap 1025
+void * scone_kernel_mmap(void * addr, size_t length, int prot, int flags, int fd, off_t offset) {
+  return (void*)syscall(SYS_untrusted_mmap, addr, length, prot, flags, fd, offset);
+  //printf("scone mmap syscall number : %d\n", SYS_untrusted_mmap);
+  return addr;
+}
+#endif
+
 /*
  * util_map_hint_unused -- use /proc to determine a hint address for mmap()
  *
@@ -168,8 +177,14 @@ util_map_hint(size_t len, size_t req_align)
 		 * zero cost for overcommit accounting.  Note: MAP_NORESERVE
 		 * flag is ignored if overcommit is disabled (mode 2).
 		 */
+#ifdef SCONE
+		LOG(15,"SCONE mmap");
+		char *addr = scone_kernel_mmap(NULL, len + align, PROT_READ,
+                                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+#else	
 		char *addr = mmap(NULL, len + align, PROT_READ,
 					MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+#endif
 		if (addr == MAP_FAILED) {
 			ERR("!mmap MAP_ANONYMOUS");
 		} else {
@@ -200,12 +215,25 @@ util_map_sync(void *addr, size_t len, int proto, int flags, int fd,
 
 	/* if map_sync is NULL do not even try to mmap with MAP_SYNC flag */
 	if (!map_sync || flags & MAP_PRIVATE)
+#ifdef SCONE
+		LOG(15,"SCONE mmap");
+		return scone_kernel_mmap(addr, len, proto, flags, fd, offset);
+#else
 		return mmap(addr, len, proto, flags, fd, offset);
+#endif
 
 	/* MAP_SHARED */
+#ifdef SCONE
+	LOG(15,"SCONE mmap");
+	void *ret = scone_kernel_mmap(addr, len, proto,
+                        flags | MAP_SHARED_VALIDATE | MAP_SYNC,
+                        fd, offset);
+#else
 	void *ret = mmap(addr, len, proto,
 			flags | MAP_SHARED_VALIDATE | MAP_SYNC,
 			fd, offset);
+#endif
+
 	if (ret != MAP_FAILED) {
 		LOG(4, "mmap with MAP_SYNC succeeded");
 		*map_sync = 1;
@@ -214,7 +242,12 @@ util_map_sync(void *addr, size_t len, int proto, int flags, int fd,
 
 	if (errno == EINVAL || errno == ENOTSUP) {
 		LOG(4, "mmap with MAP_SYNC not supported");
+#ifdef SCONE
+		LOG(15,"SCONE mmap");
+		return scone_kernel_mmap(addr, len, proto, flags, fd, offset);
+#else
 		return mmap(addr, len, proto, flags, fd, offset);
+#endif
 	}
 
 	/* other error */

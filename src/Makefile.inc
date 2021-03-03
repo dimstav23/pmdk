@@ -92,6 +92,11 @@ ifeq ($(GPERF), 1)
 DEFAULT_CFLAGS += -DGPERF
 endif
 
+#if scone is enabled, add it to the general cflags
+ifeq ($(SCONE),1)
+DEFAULT_CFLAGS += -DSCONE
+endif
+
 ifeq ($(DEBUG),1)
 # Undefine _FORTIFY_SOURCE in case it's set in system-default or
 # user-defined CFLAGS as it conflicts with -O0.
