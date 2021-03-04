@@ -147,6 +147,9 @@ typedef void (*pmemobj_tx_callback)(PMEMobjpool *pop, enum pobj_tx_stage stage,
 
 #define POBJ_XLOG_APPEND_BUFFER_NO_ABORT	POBJ_FLAG_TX_NO_ABORT
 #define POBJ_XLOG_APPEND_BUFFER_VALID_FLAGS (POBJ_XLOG_APPEND_BUFFER_NO_ABORT)
+
+void* sobj_tx_read(PMEMobjpool* pop, PMEMoid oid, size_t actual_size);
+void sobj_tx_write(PMEMobjpool* pop, PMEMoid oid, size_t actual_size, uint8_t* data);
 /*
  * Starts a new transaction in the current thread.
  * If called within an open transaction, starts a nested transaction.

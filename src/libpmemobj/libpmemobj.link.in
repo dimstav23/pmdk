@@ -92,6 +92,8 @@ LIBPMEMOBJ_1.0 {
 		pmemobj_tx_errno;
 		pmemobj_tx_process;
 		pmemobj_tx_add_range;
+		sobj_tx_read;
+		sobj_tx_write;
 		pmemobj_tx_add_range_direct;
 		pmemobj_tx_xadd_range;
 		pmemobj_tx_xadd_range_direct;

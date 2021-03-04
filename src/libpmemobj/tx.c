@@ -1021,7 +1021,6 @@ pmemobj_tx_commit(void)
 	}
 
 	tx->stage = TX_STAGE_ONCOMMIT;
-
 	/* ONCOMMIT */
 	obj_tx_callback(tx);
 	PMEMOBJ_API_END();
@@ -1450,6 +1449,25 @@ pmemobj_tx_xadd_range_direct(const void *ptr, size_t size, uint64_t flags)
 
 	PMEMOBJ_API_END();
 	return ret;
+}
+
+void* sobj_tx_read(PMEMobjpool* pop, PMEMoid oid, size_t actual_size)
+{
+    void* pmem_pointer = pmemobj_direct(oid);
+    //assert(pmem_pointer!=NULL);
+    //size_t actual_size = 4096;
+	//uint8_t* decryptedtext = calloc(actual_size, sizeof(uint8_t));
+    uint8_t* decryptedtext = (uint8_t*)malloc(sizeof(uint8_t)* actual_size);
+    memcpy(decryptedtext, pmem_pointer, actual_size);
+    return decryptedtext;
+}
+
+void sobj_tx_write(PMEMobjpool* pop, PMEMoid oid, size_t actual_size, uint8_t* data)
+{
+    void* pmem_ptr = pmemobj_direct(oid);
+	//pmemobj_memcpy(pop, pmem_ptr, data, actual_size, 0);
+	pmemobj_memcpy_persist(pop, pmem_ptr, data, actual_size);
+	return;
 }
 
 /*

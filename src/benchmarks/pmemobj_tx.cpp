@@ -681,6 +681,16 @@ pmdk_delete(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t i
 }
 
 /*
+static void* test_tx_read(PMEMoid oid) {
+	void* pmem_pointer = pmemobj_direct(oid);
+    assert(pmem_pointer!=NULL);
+    int actual_size = 4096;
+    uint8_t* decryptedtext = (uint8_t*)malloc(sizeof(uint8_t)* actual_size);
+    memcpy(decryptedtext, pmem_pointer, actual_size);
+    return decryptedtext;
+}
+*/
+/*
  * pmdk_get_put -- 
  */
 static int
@@ -689,14 +699,43 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 	int ret = 0;
 	void* ret_obj = NULL;
 	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
-	uint8_t* buffer =(uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
+	uint8_t* buffer = NULL;// (uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
 	//printf("get ratio %d\n",obj_bench->obj_args->get_ratio);
+	
+	for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
+			if (rand()%100 < obj_bench->obj_args->get_ratio) {
+				/*
+				if (idx % 2 == 1)
+					ret_obj = sobj_tx_read(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				else
+					ret_obj = test_tx_read(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				*/
+				ret_obj = sobj_tx_read(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, obj_bench->sizes[idx]);
+				assert(ret_obj!=NULL);
+				free(ret_obj);
+			}
+			else {
+				//pmemobj_tx_add_range(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 0, obj_bench->sizes[(idx+i)%obj_bench->n_objs]);
+				buffer = calloc(obj_bench->sizes[(idx+i)%obj_bench->n_objs], sizeof(uint8_t));
+				
+				sobj_tx_write(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 
+								obj_bench->sizes[(idx+i)%obj_bench->n_objs], buffer);
+				free(buffer);
+
+				//void* pmem_ptr = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				//pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(idx+i)%obj_bench->n_objs], 0);
+			}
+	}
+	
+	/*
 	TX_BEGIN(obj_bench->pop)
 	{
 		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
 			if (rand()%100 < obj_bench->obj_args->get_ratio) {
 				ret_obj = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
+				memcpy(buffer, ret_obj, obj_bench->sizes[(idx+i)%obj_bench->n_objs]*sizeof(uint8_t));
 				assert(ret_obj!=NULL);
+				
 			}
 			else {
 				pmemobj_tx_add_range(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 0, obj_bench->sizes[(idx+i)%obj_bench->n_objs]);
@@ -705,7 +744,7 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 			}
 		}
 		free(buffer);
-	
+	*/
 	/*
 		int new_idx = 0;
 		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
@@ -721,7 +760,8 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 			}
 		}
 		free(buffer);
-	*/	
+	*/
+	/*	
 	}
 	TX_ONABORT
 	{
@@ -730,7 +770,7 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 		ret = -1;
 	}
 	TX_END
-
+	*/
 	return(ret);
 }
 
@@ -1334,8 +1374,8 @@ obj_tx_init(struct benchmark *bench, struct benchmark_args *args)
 	size_t psize = args->n_ops_per_thread * (dsize + ALLOC_OVERHEAD) *
 					args->n_threads;
 					
-	if (args->internal_repeats != 0)
-		psize *= args->internal_repeats;		
+	//if (args->internal_repeats != 0)
+	//	psize *= args->internal_repeats;		
 
 	psize += PMEMOBJ_MIN_POOL;
 	psize = (size_t)(psize * FACTOR);
@@ -1569,7 +1609,7 @@ pmemobj_tx_constructor(void)
 		clo_field_size(struct obj_tx_args, tx_ops);
 	obj_tx_clo[10].type_uint.base = CLO_INT_BASE_DEC | CLO_INT_BASE_HEX;
 	obj_tx_clo[10].type_uint.min = 1;
-	obj_tx_clo[10].type_uint.max = 20;
+	obj_tx_clo[10].type_uint.max = 100;
 
 	obj_tx_alloc.name = "obj_tx_alloc";
 	obj_tx_alloc.brief = "pmemobj_tx_alloc() benchmark";
