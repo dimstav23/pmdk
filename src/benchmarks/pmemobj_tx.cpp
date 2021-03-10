@@ -699,69 +699,42 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 	int ret = 0;
 	void* ret_obj = NULL;
 	auto *obj_worker = (struct obj_tx_worker *)worker->priv;
-	uint8_t* buffer = NULL;// (uint8_t*)malloc(obj_bench->sizes[idx]*sizeof(uint8_t));
-	//printf("get ratio %d\n",obj_bench->obj_args->get_ratio);
-	
+	uint8_t* buffer = NULL;
+	unsigned int seedp = 0;
+
+	/*
 	for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
-			if (rand()%100 < obj_bench->obj_args->get_ratio) {
-				/*
-				if (idx % 2 == 1)
-					ret_obj = sobj_tx_read(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
-				else
-					ret_obj = test_tx_read(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
-				*/
+			if (rand_r(&seedp)%100 < obj_bench->obj_args->get_ratio) {
 				ret_obj = sobj_tx_read(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, obj_bench->sizes[idx]);
 				assert(ret_obj!=NULL);
 				free(ret_obj);
 			}
 			else {
-				//pmemobj_tx_add_range(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 0, obj_bench->sizes[(idx+i)%obj_bench->n_objs]);
-				buffer = calloc(obj_bench->sizes[(idx+i)%obj_bench->n_objs], sizeof(uint8_t));
+				buffer = (uint8_t*)calloc(obj_bench->sizes[(idx+i)%obj_bench->n_objs], sizeof(uint8_t));
 				
 				sobj_tx_write(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 
 								obj_bench->sizes[(idx+i)%obj_bench->n_objs], buffer);
 				free(buffer);
-
-				//void* pmem_ptr = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
-				//pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(idx+i)%obj_bench->n_objs], 0);
 			}
 	}
+	*/
 	
-	/*
 	TX_BEGIN(obj_bench->pop)
 	{
 		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
-			if (rand()%100 < obj_bench->obj_args->get_ratio) {
-				ret_obj = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
-				memcpy(buffer, ret_obj, obj_bench->sizes[(idx+i)%obj_bench->n_objs]*sizeof(uint8_t));
+			if (rand_r(&seedp)%100 < obj_bench->obj_args->get_ratio) {
+				ret_obj = sobj_tx_read(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, obj_bench->sizes[idx]);
 				assert(ret_obj!=NULL);
+				free(ret_obj);
+			}
+			else {
+				buffer = (uint8_t*)calloc(obj_bench->sizes[(idx+i)%obj_bench->n_objs], sizeof(uint8_t));
 				
-			}
-			else {
-				pmemobj_tx_add_range(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 0, obj_bench->sizes[(idx+i)%obj_bench->n_objs]);
-				void* pmem_ptr = pmemobj_direct(obj_worker->oids[(idx+i)%obj_bench->n_objs].oid);
-				pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(idx+i)%obj_bench->n_objs], 0);
+				sobj_tx_write(obj_bench->pop, obj_worker->oids[(idx+i)%obj_bench->n_objs].oid, 
+								obj_bench->sizes[(idx+i)%obj_bench->n_objs], buffer);
+				free(buffer);
 			}
 		}
-		free(buffer);
-	*/
-	/*
-		int new_idx = 0;
-		for (int i = 0; i < obj_bench->obj_args->tx_ops; i++) {
-			new_idx = idx + i;
-			if (((new_idx % 10) * 10)  < obj_bench->obj_args->get_ratio) {
-				ret_obj = pmemobj_direct(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid);
-				assert(ret_obj!=NULL);
-			}
-			else {
-				pmemobj_tx_add_range(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid, 0, obj_bench->sizes[new_idx]);
-				void* pmem_ptr = pmemobj_direct(obj_worker->oids[(new_idx)%obj_bench->n_objs].oid);
-				pmemobj_memcpy(obj_bench->pop, pmem_ptr, buffer, obj_bench->sizes[(new_idx)%obj_bench->n_objs], 0);
-			}
-		}
-		free(buffer);
-	*/
-	/*	
 	}
 	TX_ONABORT
 	{
@@ -770,7 +743,7 @@ pmdk_get_put(struct obj_tx_bench *obj_bench, struct worker_info *worker, size_t 
 		ret = -1;
 	}
 	TX_END
-	*/
+	
 	return(ret);
 }
 
@@ -1055,7 +1028,7 @@ obj_tx_pmdk_op(struct benchmark *bench, struct operation_info *info)
 {
 	auto *obj_bench = (struct obj_tx_bench *)pmembench_get_priv(bench);
 	auto *obj_worker = (struct obj_tx_worker *)info->worker->priv;
-	unsigned op_calls = info->args->internal_repeats / obj_bench->obj_args->tx_ops;
+	unsigned op_calls = info->args->internal_repeats / obj_bench->obj_args->tx_ops / info->args->n_threads;
 	for (unsigned i = 0 ; i < op_calls ; i++) {
 		if (pmdk_op[obj_bench->pmdk_func](obj_bench, info->worker,
 					    info->index) != 0)

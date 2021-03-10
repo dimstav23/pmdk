@@ -853,7 +853,7 @@ get_total_results(struct total_results *tres)
 	/* number of operations per second */
 	if (tres->internal_repeats != 0) {
 		tres->nopsps =
-		(double)tres->nops * (double)tres->internal_repeats * (double)tres->nthreads / tres->total.avg;
+		(double)tres->nops * (double)tres->internal_repeats /* * (double)tres->nthreads */ / tres->total.avg;
 	}
 	else {
 		tres->nopsps =
@@ -899,7 +899,13 @@ get_total_results(struct total_results *tres)
 	}
 
 	/* average latency */
-	size_t count = tres->nrepeats * tres->nthreads * tres->nops;
+	size_t count;
+	if (tres->internal_repeats != 0) {
+		count = tres->nrepeats * tres->internal_repeats * tres->nops;
+	}
+	else {
+		count = tres->nrepeats * tres->nthreads * tres->nops;
+	}
 	assert(count > 0);
 	tres->latency.avg /= count;
 
